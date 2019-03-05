@@ -1,0 +1,6 @@
+build/**
+dist/**
+hooks/__pycache__/**
+__pycache__/**
+current.pkl
+__pycache__/topicui.cpython-37.pyc

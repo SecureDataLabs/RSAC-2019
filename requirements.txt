@@ -1,0 +1,14 @@
+win32com
+PyPDF2
+numpy
+pandas
+ast
+matplotlib
+sklearn
+collections
+wordcloud
+spacy
+gensim
+nltk
+PyQt5
+pyLDAvis
